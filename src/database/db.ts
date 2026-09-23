@@ -1,37 +1,41 @@
 import * as SQLite from 'expo-sqlite';
 
-// Abre la base de datos SQLite de forma nativa
-const db = SQLite.openDatabaseSync('bapesta_store.db');
+// Abrir o crear la base de datos local
+export const openDatabase = async () => {
+  const db = await SQLite.openDatabaseAsync('bapesta_offline.db');
+  return db;
+};
 
-export const initDatabase = () => {
+// Inicializar las tablas necesarias (Usuarios y Pedidos/Sincronización)
+export const initDatabase = async () => {
   try {
-    db.execSync(`
+    const db = await openDatabase();
+    
+    // Tabla de Usuarios
+    await db.execAsync(`
       PRAGMA journal_mode = WAL;
-      
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        price REAL NOT NULL,
-        stock INTEGER NOT NULL
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        synced INTEGER DEFAULT 1
       );
+    `);
 
-      CREATE TABLE IF NOT EXISTS offline_orders (
+    // Tabla de Pedidos / Compras realizadas (para sincronizar después con la API)
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER,
-        quantity INTEGER,
+        user_email TEXT NOT NULL,
+        total TEXT NOT NULL,
+        items TEXT NOT NULL,
         synced INTEGER DEFAULT 0
       );
     `);
+
     console.log("Base de datos SQLite inicializada correctamente.");
   } catch (error) {
-    console.error("Error inicializando la base de datos:", error);
+    console.error("Error al inicializar la base de datos SQLite:", error);
   }
 };
-
-export default db;
