@@ -1,100 +1,179 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
-import db from '../database/db';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  TextInput, 
+  TouchableOpacity, 
+  Alert, 
+  KeyboardAvoidingView, 
+  Platform, 
+  ScrollView 
+} from 'react-native';
 
-export default function RegisterScreen({ navigation }: any) {
+export default function RegisterScreen({ route, navigation }: any) {
+  // Recibimos el parámetro 'isLogin' enviado desde HomeScreen (por defecto falso)
+  const isLogin = route.params?.isLogin ?? false;
+
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleRegister = () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Completa todos los campos para registrarte.');
+  const handleSubmit = () => {
+    // Si es registro, validamos también nombre y apellido
+    if (!isLogin && (!firstName || !lastName)) {
+      Alert.alert('Error', 'Por favor ingresa tu nombre y apellido.');
       return;
     }
 
-    try {
-      db.runSync('INSERT INTO users (email, password) VALUES (?, ?)', [email, password]);
-      Alert.alert('¡Éxito!', 'Usuario registrado correctamente en SQLite.');
-      navigation.navigate('Login');
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Error', 'El correo ya se encuentra registrado o falló SQLite.');
+    if (!email || !password) {
+      Alert.alert('Error', 'Por favor completa todos los campos.');
+      return;
     }
+
+    if (isLogin) {
+      Alert.alert('Éxito', `Sesión iniciada con: ${email}`);
+    } else {
+      Alert.alert('Éxito', `Cuenta creada para ${firstName} ${lastName} (${email})`);
+    }
+
+    // Retornamos al Home pasando el correo electrónico para actualizar la sesión
+    navigation.navigate({
+      name: 'Home',
+      params: { loggedInEmail: email },
+      merge: true,
+    });
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>★ NUEVO REGISTRO ★</Text>
+    <KeyboardAvoidingView 
+      style={{ flex: 1, backgroundColor: '#0b0b0b' }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Botón superior para regresar */}
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.backButtonText}>‹ Gestión de Cuenta</Text>
+        </TouchableOpacity>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Correo electrónico"
-        placeholderTextColor="#666"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-      />
+        {/* Título dinámico según si es login o registro */}
+        <Text style={styles.title}>
+          {isLogin ? '★ INICIAR SESIÓN ★' : '★ NUEVO REGISTRO ★'}
+        </Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Contraseña"
-        placeholderTextColor="#666"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+        {/* Campos de Nombre y Apellido solo aparecen en Registro */}
+        {!isLogin && (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder="Nombre"
+              placeholderTextColor="#666"
+              value={firstName}
+              onChangeText={setFirstName}
+            />
 
-      <TouchableOpacity style={styles.button} onPress={handleRegister}>
-        <Text style={styles.buttonText}>REGISTRARSE</Text>
-      </TouchableOpacity>
+            <TextInput
+              style={styles.input}
+              placeholder="Apellido"
+              placeholderTextColor="#666"
+              value={lastName}
+              onChangeText={setLastName}
+            />
+          </>
+        )}
 
-      <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-        <Text style={styles.linkText}>¿Ya tienes cuenta? Inicia sesión</Text>
-      </TouchableOpacity>
-    </View>
+        <TextInput
+          style={styles.input}
+          placeholder="Correo electrónico"
+          placeholderTextColor="#666"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          value={email}
+          onChangeText={setEmail}
+        />
+
+        <TextInput
+          style={styles.input}
+          placeholder="Contraseña"
+          placeholderTextColor="#666"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
+
+        <TouchableOpacity style={styles.button} onPress={handleSubmit}>
+          <Text style={styles.buttonText}>
+            {isLogin ? 'Ingresar' : 'Registrarse'}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#111',
+  scrollContainer: {
+    flexGrow: 1,
+    backgroundColor: '#0b0b0b',
+    padding: 20,
     justifyContent: 'center',
-    paddingHorizontal: 30,
+    alignItems: 'center',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#141414',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  backButtonText: {
+    color: '#ff69b4',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   title: {
     color: '#ff69b4',
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 'bold',
-    textAlign: 'center',
     marginBottom: 30,
-    letterSpacing: 2,
+    letterSpacing: 1,
+    marginTop: 40,
   },
   input: {
-    backgroundColor: '#1a1a1a',
-    color: '#fff',
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 15,
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#141414',
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: '#262626',
+    borderRadius: 8,
+    padding: 14,
+    color: '#ffffff',
+    marginBottom: 16,
   },
   button: {
+    width: '100%',
+    maxWidth: 340,
     backgroundColor: '#ff69b4',
-    padding: 15,
+    padding: 14,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 10,
   },
   buttonText: {
-    color: '#000',
+    color: '#0b0b0b',
     fontWeight: 'bold',
     fontSize: 16,
-  },
-  linkText: {
-    color: '#888',
-    textAlign: 'center',
-    marginTop: 20,
-    fontSize: 14,
   },
 });

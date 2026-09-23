@@ -62,6 +62,7 @@ app.post('/api/orders/sync', (req, res) => {
 });
 
 // Iniciar servidor en el puerto 4000
-app.listen(PORT, () => {
-  console.log(`Servidor API corriendo en http://localhost:${PORT}`);
+// PORT = 4000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`);
 });

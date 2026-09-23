@@ -10,7 +10,7 @@ export const openDatabase = async () => {
 export const initDatabase = async () => {
   try {
     const db = await openDatabase();
-    
+
     // Tabla de Usuarios
     await db.execAsync(`
       PRAGMA journal_mode = WAL;
@@ -23,7 +23,7 @@ export const initDatabase = async () => {
       );
     `);
 
-    // Tabla de Pedidos / Compras realizadas (para sincronizar después con la API)
+    // Tabla de Pedidos / Compras realizadas
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

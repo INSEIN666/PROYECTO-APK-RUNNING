@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
-import db from '../database/db';
+import { openDatabase } from '../database/db';
 
 export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Por favor completa todos los campos.');
       return;
     }
 
     try {
-      const rows: any = db.getAllSync(
+      const db = await openDatabase();
+      const rows: any = await db.getAllAsync(
         'SELECT * FROM users WHERE email = ? AND password = ?',
         [email, password]
       );
