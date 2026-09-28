@@ -23,16 +23,25 @@ export const initDatabase = async () => {
       );
     `);
 
-    // Tabla de Pedidos / Compras realizadas
+    // Tabla de Pedidos / Compras realizadas (Incluyendo la columna 'image')
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_email TEXT NOT NULL,
         total TEXT NOT NULL,
         items TEXT NOT NULL,
+        image TEXT,
         synced INTEGER DEFAULT 0
       );
     `);
+
+    // Por seguridad: si la tabla ya existía en tu teléfono de antes sin la columna image, 
+    // intentamos agregarla dinámicamente para que no falle.
+    try {
+      await db.execAsync(`ALTER TABLE orders ADD COLUMN image TEXT;`);
+    } catch (e) {
+      // Si la columna ya existe, SQLite lanzará un error que ignoramos de forma segura aquí
+    }
 
     console.log("Base de datos SQLite inicializada correctamente.");
   } catch (error) {

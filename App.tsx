@@ -4,12 +4,22 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
+import * as Notifications from 'expo-notifications';
 import { initDatabase, openDatabase } from './src/database/db';
 import RegisterScreen from './src/screens/RegisterScreen';
 
+// Configuración de notificaciones
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+  } as any),
+});
+
 const Stack = createNativeStackNavigator();
 
-// Pantalla principal del catálogo (HomeScreen)
 function HomeScreen({ navigation, route }: any) {
   const [dbInitialized, setDbInitialized] = useState(false);
   const [profileImage, setProfileImage] = useState('https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=60');
@@ -18,11 +28,37 @@ function HomeScreen({ navigation, route }: any) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('Invitado');
   const [isConnected, setIsConnected] = useState<boolean | null>(true);
+  const [isDarkMode, setIsDarkMode] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      setIsConnected(state.isConnected);
+    const unsubscribe = NetInfo.addEventListener(async state => {
+      const connected = state.isConnected;
+      setIsConnected(connected);
+
+      if (connected) {
+        try {
+          const db = await openDatabase();
+          const pendingOrders: any = await db.getAllAsync('SELECT * FROM orders WHERE synced = 0;');
+          
+          if (pendingOrders.length > 0) {
+            await db.runAsync('UPDATE orders SET synced = 1 WHERE synced = 0;');
+            
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: "🔄 Sincronización Automática",
+                subtitle: "Red recuperada con éxito",
+                body: `Se han sincronizado ${pendingOrders.length} pedido(s) pendientes automáticamente.`,
+              },
+              trigger: null,
+            });
+          }
+        } catch (error) {
+          console.log('Error en sincronización automática en segundo plano:', error);
+        }
+      }
     });
+
+    Notifications.requestPermissionsAsync();
     return () => unsubscribe();
   }, []);
 
@@ -40,20 +76,37 @@ function HomeScreen({ navigation, route }: any) {
       .catch((err) => console.log('Error DB:', err));
   }, []);
 
-  const handlePickImage = async () => {
+  // Función mejorada para elegir galería o cámara
+  const handlePickImage = async (useCamera: boolean = false) => {
     setMenuVisible(false);
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    let permissionResult;
+    if (useCamera) {
+      permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    } else {
+      permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    }
+
     if (!permissionResult.granted) {
-      Alert.alert('Permiso denegado', 'Se requieren permisos para acceder a tus fotos.');
+      Alert.alert('Permiso denegado', 'Se requieren permisos para acceder a la cámara o tus fotos.');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
+    let result;
+    if (useCamera) {
+      result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+    } else {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+    }
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       setProfileImage(result.assets[0].uri);
@@ -116,29 +169,44 @@ function HomeScreen({ navigation, route }: any) {
     },
   ];
 
+  const themeStyles = {
+    safeArea: { backgroundColor: isDarkMode ? '#0b0b0b' : '#f4f4f6' },
+    container: { backgroundColor: isDarkMode ? '#0b0b0b' : '#f4f4f6' },
+    textColor: { color: isDarkMode ? '#ffffff' : '#111111' },
+    subTextColor: { color: isDarkMode ? '#888888' : '#666666' },
+    cardBg: { backgroundColor: isDarkMode ? '#141414' : '#ffffff', borderColor: isDarkMode ? '#262626' : '#e0e0e0' },
+    bannerBg: { backgroundColor: isDarkMode ? '#161616' : '#ffffff', borderColor: isDarkMode ? '#333' : '#ddd' },
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container}>
+    <SafeAreaView style={[styles.safeArea, themeStyles.safeArea]}>
+      <ScrollView style={[styles.container, themeStyles.container]}>
         
         {!isConnected && (
           <View style={styles.offlineBanner}>
             <Text style={styles.offlineText}>
-              ⚠️ Modo Offline Activo - Guardando datos en SQLite local
+              ⚠️ Modo Offline Activo - Sincronización automática pausada
             </Text>
           </View>
         )}
 
-        {/* Header Superior: Perfil + Botones de Autenticación + Carrito */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.userInfo} onPress={handleProfilePress}>
             <Image source={{ uri: profileImage }} style={styles.avatar} />
             <View>
-              <Text style={styles.welcomeText}>{username}</Text>
+              <Text style={[styles.welcomeText, themeStyles.textColor]}>{username}</Text>
               <Text style={styles.subText}>{isLoggedIn ? 'Toca para gestionar' : 'Invitado'}</Text>
             </View>
           </TouchableOpacity>
 
           <View style={styles.authButtonsContainer}>
+            <TouchableOpacity 
+              style={styles.themeToggleButton}
+              onPress={() => setIsDarkMode(!isDarkMode)}
+            >
+              <Text style={{ fontSize: 13 }}>{isDarkMode ? '☀️' : '🌙'}</Text>
+            </TouchableOpacity>
+
             {!isLoggedIn ? (
               <>
                 <TouchableOpacity 
@@ -167,46 +235,42 @@ function HomeScreen({ navigation, route }: any) {
               </TouchableOpacity>
             )}
 
-            {/* BOTÓN DEL CARRITO */}
             <TouchableOpacity 
               style={styles.cartIconButton}
-              onPress={() => navigation.navigate('Cart')}
+              onPress={() => navigation.navigate('Cart', { isDarkMode })}
             >
               <Text style={styles.cartIconText}>🛒</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Banner */}
-        <View style={styles.banner}>
+        <View style={[styles.banner, themeStyles.bannerBg]}>
           <Text style={styles.bannerTitle}>EDICIÓN LIMITADA ABC CAMO</Text>
-          <Text style={styles.bannerSubtitle}>SQLite Local Offline + Persistencia Móvil</Text>
+          <Text style={[styles.bannerSubtitle, themeStyles.subTextColor]}>Sincronización Automática + Notificaciones + SQLite</Text>
         </View>
 
-        {/* Botón de Conectar / Revisar Base de Datos Local */}
         <TouchableOpacity style={styles.dbButton} onPress={handleConnectDatabase}>
           <Text style={styles.dbButtonText}>
             {dbInitialized ? '🟢 Base de Datos SQLite Lista' : '🟡 Inicializando Base de Datos...'}
           </Text>
         </TouchableOpacity>
 
-        <Text style={styles.sectionTitle}>Nuevos Lanzamientos</Text>
+        <Text style={[styles.sectionTitle, themeStyles.textColor]}>Nuevos Lanzamientos</Text>
 
-        {/* Cuadrícula de Productos */}
         <View style={styles.gridContainer}>
           {products.map((item) => (
             <TouchableOpacity 
               key={item.id} 
-              style={styles.card}
-              onPress={() => navigation.navigate('ProductDetail', { product: item })}
+              style={[styles.card, themeStyles.cardBg]}
+              onPress={() => navigation.navigate('ProductDetail', { product: item, isDarkMode })}
             >
               <Image source={{ uri: item.image }} style={styles.productImage} />
-              <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
+              <Text style={[styles.productName, themeStyles.textColor]} numberOfLines={1}>{item.name}</Text>
               <Text style={styles.productPrice}>{item.price}</Text>
 
               <TouchableOpacity 
                 style={styles.buyButton}
-                onPress={() => navigation.navigate('ProductDetail', { product: item })}
+                onPress={() => navigation.navigate('ProductDetail', { product: item, isDarkMode })}
               >
                 <Text style={styles.buyButtonText}>Comprar</Text>
               </TouchableOpacity>
@@ -214,7 +278,7 @@ function HomeScreen({ navigation, route }: any) {
           ))}
         </View>
 
-        {/* Modal de Usuario */}
+        {/* Modal para elegir Cámara o Galería */}
         <Modal
           animationType="fade"
           transparent={true}
@@ -223,11 +287,15 @@ function HomeScreen({ navigation, route }: any) {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Opciones de Cuenta</Text>
-              <Text style={styles.modalSubtitle}>Gestiona tu perfil de usuario</Text>
+              <Text style={styles.modalTitle}>Opciones de Perfil</Text>
+              <Text style={styles.modalSubtitle}>Elige una opción para actualizar tu foto</Text>
 
-              <TouchableOpacity style={styles.modalButtonPrimary} onPress={handlePickImage}>
-                <Text style={styles.modalButtonPrimaryText}>Cambiar Foto de Perfil</Text>
+              <TouchableOpacity style={styles.modalButtonPrimary} onPress={() => handlePickImage(true)}>
+                <Text style={styles.modalButtonPrimaryText}>📷 Tomar Foto con la Cámara</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.modalButtonPrimary} onPress={() => handlePickImage(false)}>
+                <Text style={styles.modalButtonPrimaryText}>🖼️ Seleccionar de la Galería</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
@@ -253,34 +321,45 @@ function HomeScreen({ navigation, route }: any) {
   );
 }
 
-// Pantalla de Detalles del Producto
 function ProductDetailScreen({ route }: any) {
-  const { product } = route.params;
+  const { product, isDarkMode } = route.params;
 
   const handleOfflineOrder = async () => {
     try {
       const db = await openDatabase();
       await db.runAsync(
-        'INSERT INTO orders (user_email, total, items, synced) VALUES (?, ?, ?, ?)',
-        ['nico777@sena.edu.co', product.price, product.name, 0]
+        'INSERT INTO orders (user_email, total, items, image, synced) VALUES (?, ?, ?, ?, ?)',
+        ['nico777@sena.edu.co', product.price, product.name, product.image, 0]
       );
-      Alert.alert('¡Éxito Offline!', 'Pedido guardado exitosamente en SQLite local. Se sincronizará cuando recupere conexión.');
+      
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "📦 Pedido Guardado Offline",
+          body: `Tu pedido de ${product.name} se guardó en SQLite local y se sincronizará automáticamente al tener red.`,
+        },
+        trigger: null,
+      });
+
+      Alert.alert('¡Guardado Local!', 'Pedido guardado en SQLite. Se sincronizará automáticamente cuando recupere la conexión.');
     } catch (error) {
       console.error(error);
       Alert.alert('Error', 'No se pudo guardar el pedido localmente.');
     }
   };
 
+  const bgStyle = { backgroundColor: isDarkMode ? '#0b0b0b' : '#ffffff' };
+  const textStyle = { color: isDarkMode ? '#ffffff' : '#111111' };
+
   return (
-    <ScrollView style={styles.detailContainer}>
+    <ScrollView style={[styles.detailContainer, bgStyle]}>
       <Image source={{ uri: product.image }} style={styles.detailImage} />
       <View style={styles.detailContent}>
-        <Text style={styles.detailName}>{product.name}</Text>
-        <Text style={styles.detailPrice}>{product.price}</Text>
+        <Text style={[styles.detailName, textStyle]}>{product.name}</Text>
+        <Text style={[styles.detailPrice]}>{product.price}</Text>
         
         <Text style={styles.detailSectionTitle}>Descripción del Producto:</Text>
         <Text style={styles.detailDescription}>
-          Prenda oficial exclusiva de la colección Bapesta ABC Camo. Estética urbana de alta gama con acabados prémium, garantizando máxima durabilidad y funcionamiento independiente offline.
+          Prenda oficial exclusiva de la colección Bapesta ABC Camo. Estética urbana de alta gama con soporte offline completo, sincronización en segundo plano y notificaciones inteligentes.
         </Text>
 
         <TouchableOpacity style={styles.primaryButton} onPress={handleOfflineOrder}>
@@ -291,9 +370,18 @@ function ProductDetailScreen({ route }: any) {
   );
 }
 
-// PANTALLA DE CARRITO ACTUALIZADA CON BOTONES DE ACCIÓN
-function CartScreen() {
+function CartScreen({ route }: any) {
+  const isDarkMode = route.params?.isDarkMode ?? true;
   const [orders, setOrders] = useState<any[]>([]);
+  const [isConnected, setIsConnected] = useState<boolean | null>(true);
+  const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     loadOrders();
@@ -310,10 +398,15 @@ function CartScreen() {
   };
 
   const handleSyncOrders = async () => {
+    if (!isConnected) {
+      Alert.alert('Sin Conexión', 'No se pudo sincronizar por lo que no está conectado a una red.');
+      return;
+    }
+
     try {
       const db = await openDatabase();
       await db.runAsync('UPDATE orders SET synced = 1 WHERE synced = 0;');
-      Alert.alert('Sincronización Exitosa 🔄', 'Los pedidos locales se han actualizado a estado sincronizado en SQLite.');
+      Alert.alert('Sincronización Exitosa 🔄', 'Los pedidos locales se han sincronizado correctamente.');
       loadOrders();
     } catch (error) {
       console.error(error);
@@ -335,7 +428,7 @@ function CartScreen() {
               const db = await openDatabase();
               await db.runAsync('DELETE FROM orders;');
               setOrders([]);
-              Alert.alert('Base de Datos Vacía 🗑️', 'Los registros locales fueron eliminados de SQLite.');
+              Alert.alert('Base de Datos Vacía 🗑️', 'Los registros locales fueron eliminados.');
             } catch (error) {
               console.error(error);
             }
@@ -345,19 +438,65 @@ function CartScreen() {
     );
   };
 
+  const filteredOrders = orders.filter(item => {
+    if (activeTab === 'pending') return item.synced === 0;
+    return item.synced === 1;
+  });
+
+  const cartBg = { backgroundColor: isDarkMode ? '#0b0b0b' : '#f4f4f6' };
+  const textStyle = { color: isDarkMode ? '#ffffff' : '#111111' };
+
   return (
-    <View style={styles.cartContainer}>
-      {/* Cabecera con título y botones de control */}
+    <View style={[styles.cartContainer, cartBg]}>
+      <View style={[styles.netBadge, { backgroundColor: isConnected ? '#12261e' : '#261218' }]}>
+        <Text style={{ color: isConnected ? '#00ffcc' : '#ff69b4', fontSize: 12, fontWeight: 'bold', textAlign: 'center' }}>
+          {isConnected ? '🟢 Red Activa: Sincronización automática lista' : '🔴 Sin Red: Almacenando de forma local'}
+        </Text>
+      </View>
+
+      <View style={styles.tabContainer}>
+        <TouchableOpacity 
+          style={[styles.tabButton, activeTab === 'pending' && styles.activeTabButton]}
+          onPress={() => setActiveTab('pending')}
+        >
+          <Text style={[styles.tabText, activeTab === 'pending' && styles.activeTabText]}>
+            Pendientes ({orders.filter(i => i.synced === 0).length})
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.tabButton, activeTab === 'history' && styles.activeTabButton]}
+          onPress={() => setActiveTab('history')}
+        >
+          <Text style={[styles.tabText, activeTab === 'history' && styles.activeTabText]}>
+            Historial ({orders.filter(i => i.synced === 1).length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-        <Text style={styles.cartTitle}>Registros ({orders.length})</Text>
+        <Text style={[styles.cartTitle, textStyle]}>
+          {activeTab === 'pending' ? 'Pedidos por Sincronizar' : 'Historial de Compras'}
+        </Text>
         
         <View style={{ flexDirection: 'row' }}>
-          <TouchableOpacity 
-            style={{ backgroundColor: '#162620', borderWidth: 1, borderColor: '#00ffcc', padding: 6, borderRadius: 6, marginRight: 6 }} 
-            onPress={handleSyncOrders}
-          >
-            <Text style={{ color: '#00ffcc', fontSize: 11, fontWeight: 'bold' }}>🔄 Sincronizar</Text>
-          </TouchableOpacity>
+          {activeTab === 'pending' && (
+            <TouchableOpacity 
+              style={{ 
+                backgroundColor: isConnected ? '#162620' : '#1a1a1a', 
+                borderWidth: 1, 
+                borderColor: isConnected ? '#00ffcc' : '#555', 
+                padding: 6, 
+                borderRadius: 6, 
+                marginRight: 6 
+              }} 
+              onPress={handleSyncOrders}
+            >
+              <Text style={{ color: isConnected ? '#00ffcc' : '#888', fontSize: 11, fontWeight: 'bold' }}>
+                {isConnected ? '🔄 Forzar Sinc.' : '🚫 Sin Red'}
+              </Text>
+            </TouchableOpacity>
+          )}
           
           <TouchableOpacity 
             style={{ backgroundColor: '#261218', borderWidth: 1, borderColor: '#ff69b4', padding: 6, borderRadius: 6 }} 
@@ -368,22 +507,34 @@ function CartScreen() {
         </View>
       </View>
 
-      {orders.length === 0 ? (
+      {filteredOrders.length === 0 ? (
         <View style={styles.emptyCartContainer}>
-          <Text style={styles.emptyCartText}>No hay pedidos guardados en SQLite.</Text>
+          <Text style={styles.emptyCartText}>
+            {activeTab === 'pending' ? 'No hay pedidos pendientes por sincronizar.' : 'No hay historial de compras sincronizadas.'}
+          </Text>
         </View>
       ) : (
         <FlatList
-          data={orders}
+          data={filteredOrders}
           keyExtractor={(item: any, index) => index.toString()}
           renderItem={({ item }) => (
-            <View style={styles.orderCard}>
-              <Text style={styles.orderItemName}>📦 {item.items}</Text>
-              <Text style={styles.orderPrice}>Total: {item.total}</Text>
-              <Text style={{ color: '#888', fontSize: 11, marginBottom: 4 }}>Usuario: {item.user_email}</Text>
-              <Text style={{ color: item.synced === 1 ? '#00ffcc' : '#ffcc00', fontSize: 12, fontWeight: '600' }}>
-                Estado: {item.synced === 1 ? '🟢 Sincronizado' : '🟡 Pendiente (Local)'}
-              </Text>
+            <View style={[styles.orderCard, { backgroundColor: isDarkMode ? '#141414' : '#ffffff', borderColor: isDarkMode ? '#333' : '#ddd' }]}>
+              {item.image ? (
+                <Image source={{ uri: item.image }} style={styles.orderThumbnail} />
+              ) : (
+                <View style={[styles.orderThumbnail, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#333' }]}>
+                  <Text style={{ fontSize: 10, color: '#fff' }}>Sin foto</Text>
+                </View>
+              )}
+              
+              <View style={styles.orderDetails}>
+                <Text style={[styles.orderItemName, textStyle]} numberOfLines={1}>{item.items}</Text>
+                <Text style={styles.orderPrice}>{item.total}</Text>
+                <Text style={{ color: isDarkMode ? '#888' : '#666', fontSize: 10, marginBottom: 2 }}>{item.user_email}</Text>
+                <Text style={{ color: item.synced === 1 ? '#00ffcc' : '#ffcc00', fontSize: 11, fontWeight: '600' }}>
+                  {item.synced === 1 ? '🟢 Sincronizado' : '🟡 Pendiente local'}
+                </Text>
+              </View>
             </View>
           )}
         />
@@ -392,7 +543,6 @@ function CartScreen() {
   );
 }
 
-// Configuración principal de Navegación
 export default function App() {
   return (
     <NavigationContainer>
@@ -469,6 +619,16 @@ const styles = StyleSheet.create({
   },
   authButtonsContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
+  },
+  themeToggleButton: {
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 6,
+    borderRadius: 8,
+    marginRight: 6,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   authButtonOutline: {
@@ -643,6 +803,37 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b0b0b',
     padding: 16,
   },
+  netBadge: {
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    backgroundColor: '#161616',
+    borderRadius: 8,
+    padding: 4,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  activeTabButton: {
+    backgroundColor: '#ff69b4',
+  },
+  tabText: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  activeTabText: {
+    color: '#0b0b0b',
+  },
   cartTitle: {
     color: '#ffffff',
     fontSize: 18,
@@ -656,26 +847,39 @@ const styles = StyleSheet.create({
   emptyCartText: {
     color: '#888',
     fontSize: 14,
+    textAlign: 'center',
   },
   orderCard: {
+    flexDirection: 'row',
     backgroundColor: '#141414',
     borderRadius: 10,
-    padding: 14,
+    padding: 10,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#333',
+    alignItems: 'center',
+  },
+  orderThumbnail: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    resizeMode: 'cover',
+    marginRight: 12,
+  },
+  orderDetails: {
+    flex: 1,
   },
   orderItemName: {
     color: '#ffffff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   orderPrice: {
     color: '#ff69b4',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   modalOverlay: {
     flex: 1,
@@ -718,7 +922,7 @@ const styles = StyleSheet.create({
   modalButtonPrimaryText: {
     color: '#0b0b0b',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 13,
   },
   modalButtonDanger: {
     width: '100%',
@@ -733,7 +937,7 @@ const styles = StyleSheet.create({
   modalButtonDangerText: {
     color: '#ff69b4',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 13,
   },
   modalButtonCancel: {
     width: '100%',

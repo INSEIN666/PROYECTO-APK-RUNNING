@@ -1,9 +1,44 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Image, Alert, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { openDatabase } from '../database/db'; // Asegúrate de que la ruta sea correcta
 
 export default function ProfileScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const userEmail = 'nico777@sena.edu.co'; // Puedes dinamizar esto si guardas el correo en sesión
+
+  // Estadísticas locales de SQLite
+  const [stats, setStats] = useState({
+    totalOrders: 0,
+    pendingOrders: 0,
+    syncedOrders: 0,
+  });
+
+  useEffect(() => {
+    loadUserStats();
+  }, []);
+
+  const loadUserStats = async () => {
+    try {
+      const db = await openDatabase();
+      const allOrders: any = await db.getAllAsync(
+        'SELECT * FROM orders WHERE user_email = ?;',
+        [userEmail]
+      );
+
+      const total = allOrders.length;
+      const pending = allOrders.filter((o: any) => o.synced === 0).length;
+      const synced = allOrders.filter((o: any) => o.synced === 1).length;
+
+      setStats({
+        totalOrders: total,
+        pendingOrders: pending,
+        syncedOrders: synced,
+      });
+    } catch (error) {
+      console.error('Error al cargar estadísticas del usuario:', error);
+    }
+  };
 
   // Función para abrir la galería y seleccionar foto
   const pickImage = async () => {
@@ -57,7 +92,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>★ PERFIL CAMO ★</Text>
 
       <View style={styles.avatarContainer}>
@@ -71,75 +106,141 @@ export default function ProfileScreen() {
       </View>
 
       <Text style={styles.userName}>Nicolás Ortiz</Text>
+      <Text style={styles.userEmail}>{userEmail}</Text>
       <Text style={styles.userRole}>ADSO - SENA (Estudiante)</Text>
+
+      {/* NUEVO MÓDULO: Panel de Estadísticas SQLite */}
+      <View style={styles.statsCard}>
+        <Text style={styles.statsCardTitle}>📊 Resumen de Actividad Local</Text>
+        <View style={styles.statsRow}>
+          <View style={styles.statBox}>
+            <Text style={styles.statNumber}>{stats.totalOrders}</Text>
+            <Text style={styles.statLabel}>Registros</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={[styles.statNumber, { color: '#ffcc00' }]}>{stats.pendingOrders}</Text>
+            <Text style={styles.statLabel}>Pendientes</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={[styles.statNumber, { color: '#00ffcc' }]}>{stats.syncedOrders}</Text>
+            <Text style={styles.statLabel}>Sincronizados</Text>
+          </View>
+        </View>
+      </View>
 
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.button} onPress={takePhoto}>
-          <Text style={styles.buttonText}>Tomar Foto</Text>
+          <Text style={styles.buttonText}>📷 Tomar Foto</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.buttonSecondary} onPress={pickImage}>
-          <Text style={styles.buttonSecondaryText}>Elegir de Galería</Text>
+          <Text style={styles.buttonSecondaryText}>🖼️ Elegir de Galería</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: '#111',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 30,
     paddingHorizontal: 20,
   },
   title: {
     color: '#ff69b4',
     fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 30,
+    marginBottom: 20,
     letterSpacing: 2,
   },
   avatarContainer: {
-    marginBottom: 20,
+    marginBottom: 15,
     borderRadius: 75,
     borderWidth: 3,
     borderColor: '#ff69b4',
     overflow: 'hidden',
   },
   avatar: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+    width: 130,
+    height: 130,
+    borderRadius: 65,
   },
   placeholderAvatar: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+    width: 130,
+    height: 130,
+    borderRadius: 65,
     backgroundColor: '#1a1a1a',
     alignItems: 'center',
     justifyContent: 'center',
   },
   placeholderText: {
     color: '#666',
-    fontSize: 14,
+    fontSize: 13,
   },
   userName: {
     color: '#fff',
     fontSize: 20,
     fontWeight: 'bold',
-    marginTop: 10,
+    marginTop: 5,
+  },
+  userEmail: {
+    color: '#aaa',
+    fontSize: 13,
+    marginTop: 3,
   },
   userRole: {
+    color: '#ff69b4',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  statsCard: {
+    width: '100%',
+    backgroundColor: '#161616',
+    borderRadius: 10,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#333',
+    marginBottom: 20,
+  },
+  statsCardTitle: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statBox: {
+    flex: 1,
+    backgroundColor: '#111',
+    borderRadius: 8,
+    padding: 10,
+    alignItems: 'center',
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  statNumber: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  statLabel: {
     color: '#888',
-    fontSize: 14,
-    marginTop: 5,
-    marginBottom: 30,
+    fontSize: 10,
+    textAlign: 'center',
   },
   buttonContainer: {
     width: '100%',
-    paddingHorizontal: 20,
   },
   button: {
     backgroundColor: '#ff69b4',
