@@ -1,22 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, ScrollView, Alert, Modal, SafeAreaView, Platform, FlatList } from 'react-native';
+import { StyleSheet, Text, View, Image, TouchableOpacity, ScrollView, Alert, Modal, Platform, FlatList } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
-import * as Notifications from 'expo-notifications';
 import { initDatabase, openDatabase } from './src/database/db';
 import RegisterScreen from './src/screens/RegisterScreen';
-
-// Configuración de notificaciones
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-  } as any),
-});
 
 const Stack = createNativeStackNavigator();
 
@@ -30,35 +19,32 @@ function HomeScreen({ navigation, route }: any) {
   const [isConnected, setIsConnected] = useState<boolean | null>(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
+  // Sincronización automática controlada al recuperar la red
   useEffect(() => {
+    let isSyncing = false;
+
     const unsubscribe = NetInfo.addEventListener(async state => {
       const connected = state.isConnected;
       setIsConnected(connected);
 
-      if (connected) {
+      if (connected && !isSyncing) {
+        isSyncing = true;
         try {
           const db = await openDatabase();
           const pendingOrders: any = await db.getAllAsync('SELECT * FROM orders WHERE synced = 0;');
           
           if (pendingOrders.length > 0) {
             await db.runAsync('UPDATE orders SET synced = 1 WHERE synced = 0;');
-            
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: "🔄 Sincronización Automática",
-                subtitle: "Red recuperada con éxito",
-                body: `Se han sincronizado ${pendingOrders.length} pedido(s) pendientes automáticamente.`,
-              },
-              trigger: null,
-            });
+            console.log('🔄 [EN VIVO] Sincronización automática completada por reconexión de red.');
           }
         } catch (error) {
           console.log('Error en sincronización automática en segundo plano:', error);
+        } finally {
+          isSyncing = false;
         }
       }
     });
 
-    Notifications.requestPermissionsAsync();
     return () => unsubscribe();
   }, []);
 
@@ -76,7 +62,6 @@ function HomeScreen({ navigation, route }: any) {
       .catch((err) => console.log('Error DB:', err));
   }, []);
 
-  // Función mejorada para elegir galería o cámara
   const handlePickImage = async (useCamera: boolean = false) => {
     setMenuVisible(false);
 
@@ -132,6 +117,7 @@ function HomeScreen({ navigation, route }: any) {
     try {
       const db = await openDatabase();
       const result = await db.getAllAsync('SELECT * FROM orders;');
+      console.log('⚡ [EN VIVO] Inspección de Base de Datos:', JSON.stringify(result, null, 2));
       Alert.alert(
         'Base de Datos SQLite Conectada ⚡',
         `Almacenamiento local operativo.\nRegistros guardados localmente: ${result.length}`
@@ -179,7 +165,7 @@ function HomeScreen({ navigation, route }: any) {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, themeStyles.safeArea]}>
+    <View style={[styles.safeArea, themeStyles.safeArea]}>
       <ScrollView style={[styles.container, themeStyles.container]}>
         
         {!isConnected && (
@@ -246,7 +232,7 @@ function HomeScreen({ navigation, route }: any) {
 
         <View style={[styles.banner, themeStyles.bannerBg]}>
           <Text style={styles.bannerTitle}>EDICIÓN LIMITADA ABC CAMO</Text>
-          <Text style={[styles.bannerSubtitle, themeStyles.subTextColor]}>Sincronización Automática + Notificaciones + SQLite</Text>
+          <Text style={[styles.bannerSubtitle, themeStyles.subTextColor]}>Sincronización Automática + SQLite</Text>
         </View>
 
         <TouchableOpacity style={styles.dbButton} onPress={handleConnectDatabase}>
@@ -266,7 +252,7 @@ function HomeScreen({ navigation, route }: any) {
             >
               <Image source={{ uri: item.image }} style={styles.productImage} />
               <Text style={[styles.productName, themeStyles.textColor]} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.productPrice}>{item.price}</Text>
+              <Text style={[styles.productPrice]}>{item.price}</Text>
 
               <TouchableOpacity 
                 style={styles.buyButton}
@@ -278,7 +264,6 @@ function HomeScreen({ navigation, route }: any) {
           ))}
         </View>
 
-        {/* Modal para elegir Cámara o Galería */}
         <Modal
           animationType="fade"
           transparent={true}
@@ -317,7 +302,7 @@ function HomeScreen({ navigation, route }: any) {
           </View>
         </Modal>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -332,13 +317,8 @@ function ProductDetailScreen({ route }: any) {
         ['nico777@sena.edu.co', product.price, product.name, product.image, 0]
       );
       
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "📦 Pedido Guardado Offline",
-          body: `Tu pedido de ${product.name} se guardó en SQLite local y se sincronizará automáticamente al tener red.`,
-        },
-        trigger: null,
-      });
+      const allOrders = await db.getAllAsync('SELECT * FROM orders;');
+      console.log('📦 [EN VIVO] Pedido guardado en SQLite offline:', JSON.stringify(allOrders, null, 2));
 
       Alert.alert('¡Guardado Local!', 'Pedido guardado en SQLite. Se sincronizará automáticamente cuando recupere la conexión.');
     } catch (error) {
@@ -359,7 +339,7 @@ function ProductDetailScreen({ route }: any) {
         
         <Text style={styles.detailSectionTitle}>Descripción del Producto:</Text>
         <Text style={styles.detailDescription}>
-          Prenda oficial exclusiva de la colección Bapesta ABC Camo. Estética urbana de alta gama con soporte offline completo, sincronización en segundo plano y notificaciones inteligentes.
+          Prenda oficial exclusiva de la colección Bapesta ABC Camo. Estética urbana de alta gama con soporte offline completo y sincronización en segundo plano.
         </Text>
 
         <TouchableOpacity style={styles.primaryButton} onPress={handleOfflineOrder}>
@@ -391,6 +371,9 @@ function CartScreen({ route }: any) {
     try {
       const db = await openDatabase();
       const result = await db.getAllAsync('SELECT * FROM orders;');
+      
+      console.log('🔄 [EN VIVO] Estado actual de la tabla "orders":', JSON.stringify(result, null, 2));
+      
       setOrders(result);
     } catch (error) {
       console.error(error);
@@ -406,6 +389,10 @@ function CartScreen({ route }: any) {
     try {
       const db = await openDatabase();
       await db.runAsync('UPDATE orders SET synced = 1 WHERE synced = 0;');
+      
+      const updatedResult = await db.getAllAsync('SELECT * FROM orders;');
+      console.log('✅ [EN VIVO] Sincronización manual ejecutada. Base de datos:', JSON.stringify(updatedResult, null, 2));
+
       Alert.alert('Sincronización Exitosa 🔄', 'Los pedidos locales se han sincronizado correctamente.');
       loadOrders();
     } catch (error) {
@@ -427,6 +414,7 @@ function CartScreen({ route }: any) {
             try {
               const db = await openDatabase();
               await db.runAsync('DELETE FROM orders;');
+              console.log('🗑️ [EN VIVO] Base de datos SQLite vaciada.');
               setOrders([]);
               Alert.alert('Base de Datos Vacía 🗑️', 'Los registros locales fueron eliminados.');
             } catch (error) {
@@ -567,12 +555,12 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#0b0b0b',
+    paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
   container: {
     flex: 1,
     backgroundColor: '#0b0b0b',
     padding: 16,
-    paddingTop: Platform.OS === 'ios' ? 10 : 16,
   },
   offlineBanner: {
     backgroundColor: '#ffcc00',
